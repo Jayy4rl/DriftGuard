@@ -1,0 +1,3 @@
+# Foundry dependencies and build artifacts
+contracts/lib/
+contracts/out/
