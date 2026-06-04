@@ -138,7 +138,7 @@ contract Deploy is Script {
             console2.log("  tickSpacing :", uint256(int256(tickSpacing)));
             console2.log("  initialTick :", uint256(int256(initialTick)));
         } else {
-            console2.log("CURRENCY1 not set — pool not initialised. Run InitPool.s.sol after.");
+            console2.log("CURRENCY1 not set -- pool not initialised. Run InitPool.s.sol after.");
         }
 
         vm.stopBroadcast();
