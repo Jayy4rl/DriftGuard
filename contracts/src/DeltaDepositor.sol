@@ -143,7 +143,7 @@ contract DeltaDepositor is IUnlockCallback {
                     longUpper: center,
                     shortLower: center,
                     shortUpper: center + rw,
-                    deltaThreshold: 0 // unused
+                    deltaThreshold: pos.deltaThreshold // preserve threshold so hook state stays correct
                 })
             )
         );
@@ -253,7 +253,9 @@ contract DeltaDepositor is IUnlockCallback {
             ""
         );
 
-        // Add to new ranges (same liquidity amounts, repositioned)
+        // Add to new ranges — pass deposit-format hookData so the hook updates SubPositionState.
+        // Without this, the hook's stored tick ranges and sqrtPrice bounds go stale after rebalance,
+        // causing wrong delta reads in afterSwap and a revert on the next rebalance attempt.
         poolManager.modifyLiquidity(
             d.key,
             ModifyLiquidityParams({
@@ -262,7 +264,7 @@ contract DeltaDepositor is IUnlockCallback {
                 liquidityDelta: int256(uint256(pos.longVolLiquidity)),
                 salt: bytes32(0)
             }),
-            ""
+            abi.encode(d.positionId, pos.owner, d.deltaThreshold, uint8(0))
         );
         poolManager.modifyLiquidity(
             d.key,
@@ -272,14 +274,17 @@ contract DeltaDepositor is IUnlockCallback {
                 liquidityDelta: int256(uint256(pos.shortVolLiquidity)),
                 salt: bytes32(uint256(1))
             }),
-            ""
+            abi.encode(d.positionId, pos.owner, d.deltaThreshold, uint8(1))
         );
 
-        // Symmetric rebalance → net delta ≈ 0. Clear any rounding dust.
-        int256 delta0 = poolManager.currencyDelta(address(this), d.key.currency0);
-        int256 delta1 = poolManager.currencyDelta(address(this), d.key.currency1);
-        if (delta0 > 0) poolManager.clear(d.key.currency0, uint256(delta0));
-        if (delta1 > 0) poolManager.clear(d.key.currency1, uint256(delta1));
+        // Settle net token delta after remove + re-add.
+        // A rebalance across a price move can produce a non-zero net delta in either
+        // direction: positive (pool owes us surplus) or negative (we owe the pool).
+        // _settle handles the owe-pool path; _take handles the owed-by-pool path.
+        _settle(d.key.currency0, d.payer);
+        _settle(d.key.currency1, d.payer);
+        _take(d.key.currency0, d.payer);
+        _take(d.key.currency1, d.payer);
     }
 
     // ─── Settlement helpers ───────────────────────────────────────────────────

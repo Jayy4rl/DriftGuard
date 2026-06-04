@@ -61,6 +61,7 @@ contract DeltaHook is BaseHook, IUnlockCallback {
     mapping(bytes32 positionId => PoolKey) public positionPoolKey; // needed by executeRebalance()
     mapping(PoolId => bytes32[]) public poolPositions; // multi-LP: array per pool
     mapping(bytes32 positionId => uint256) public stateNonce; // increments on each rebalance
+    mapping(bytes32 => bool) public registeredPositions;
 
     // Critical safety: prevents nested hook callbacks from re-entering delta logic mid-rebalance.
     // Must be set true before any poolManager.unlock() call; cleared immediately after.
@@ -170,6 +171,8 @@ contract DeltaHook is BaseHook, IUnlockCallback {
     ) internal override returns (bytes4, BalanceDelta) {
         // Skip nested callbacks fired during an in-progress rebalance.
         if (_rebalancing) return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+        if (hookData.length == 0) return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+
         require(params.liquidityDelta > 0, "not an add");
 
         // hookData: (bytes32 positionId, address owner, uint256 deltaThreshold, uint8 legIndex)
@@ -215,7 +218,10 @@ contract DeltaHook is BaseHook, IUnlockCallback {
             );
 
             pos.lastNetDelta = initialNetDelta;
-            poolPositions[poolId].push(positionId);
+if (!registeredPositions[positionId]) {
+    registeredPositions[positionId] = true;
+    poolPositions[poolId].push(positionId);
+}
             positionPoolKey[positionId] = key;
             stateNonce[positionId] = block.number;
 
@@ -460,7 +466,8 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         bytes calldata hookData
     ) internal override returns (bytes4, BalanceDelta) {
         // Cannot withdraw while a rebalance is mid-execution — sub-position state is being written.
-        if (_rebalancing) revert WithdrawalDuringRebalance();
+if (_rebalancing) return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
+if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
 
         // hookData: (bytes32 positionId, uint256 expectedNonce, bool isLastLeg)
         // Depositor removes both legs in one unlock. This callback fires once per leg.
@@ -531,6 +538,23 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         shortVolTickLower = center;
         shortVolTickUpper = center + RANGE_WIDTH;
     }
+
+    function updatePositionRanges(bytes32 positionId) external {
+    if (msg.sender != vault) revert NotVault();
+    SubPositionState storage pos = positions[positionId];
+    require(pos.owner != address(0), "position not found");
+    PoolKey memory key = positionPoolKey[positionId];
+    (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+    (int24 newLl, int24 newLu, int24 newSl, int24 newSu) = computeRanges(currentTick, key.tickSpacing);
+    pos.longVolTickLower          = newLl;
+    pos.longVolTickUpper          = newLu;
+    pos.longVolSqrtPriceLowerX96  = TickMath.getSqrtPriceAtTick(newLl);
+    pos.longVolSqrtPriceUpperX96  = TickMath.getSqrtPriceAtTick(newLu);
+    pos.shortVolTickLower         = newSl;
+    pos.shortVolTickUpper         = newSu;
+    pos.shortVolSqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(newSl);
+    pos.shortVolSqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(newSu);
+}
 
     // ─── Delta Math (DeltaEngine) ─────────────────────────────────────────────
     // Pure library logic compiled into this contract. No separate deployment.
