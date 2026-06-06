@@ -2,7 +2,6 @@
 pragma solidity ^0.8.26;
 
 import {BaseHook} from "v4-hooks-public/src/base/BaseHook.sol";
-import {IUnlockCallback} from "@uniswap/v4-core/src/interfaces/callback/IUnlockCallback.sol";
 import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
@@ -17,19 +16,16 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 
-contract DeltaHook is BaseHook, IUnlockCallback {
+contract DeltaHook is BaseHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
     using TransientStateLibrary for IPoolManager;
 
-    // ─── Constants ────────────────────────────────────────────────────────────
-    // Tick range for each sub-position leg. 2000 ticks ≈ ±22% price range at 1bp tick spacing.
-    // Hardcoded for hackathon. v2: configurable per vault.
-    int24 public constant RANGE_WIDTH = 2000;
+    // Constants
+            int24 public constant RANGE_WIDTH = 2000;
 
-    // ─── Types ────────────────────────────────────────────────────────────────
-    // Assumes currency1 = WETH and currency0 = USDC (USDC address < WETH address on Base).
-    // ETH delta = getAmount1Delta (currency1 = WETH). Adjust if using native ETH as currency0.
+    //  Types 
+
     struct SubPositionState {
         address owner;
         // Long-vol leg: range BELOW current price. At deposit, price = upper tick → holds max WETH.
@@ -54,7 +50,7 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         uint256 depositBlock; // block at deposit — used as part of positionId uniqueness
     }
 
-    // ─── Storage ──────────────────────────────────────────────────────────────
+    //  Storage 
     mapping(PoolId => bool) public registeredPools;
     mapping(PoolId => bool) public paused;
     mapping(bytes32 positionId => SubPositionState) public positions;
@@ -67,11 +63,11 @@ contract DeltaHook is BaseHook, IUnlockCallback {
     // Must be set true before any poolManager.unlock() call; cleared immediately after.
     bool private _rebalancing;
 
-    address public vault;
+    address public depositor;
     address public rscRelay; // Reactive Network callback proxy — may call executeRebalance()
     address public immutable deployer;
 
-    // ─── Events ───────────────────────────────────────────────────────────────
+    // Events 
     event PositionRegistered(
         bytes32 indexed positionId,
         address indexed owner,
@@ -90,21 +86,21 @@ contract DeltaHook is BaseHook, IUnlockCallback {
     // Emitted when threshold is breached. Depositor's triggerRebalance() or RSC watches this.
     event RebalanceNeeded(bytes32 indexed positionId, int256 netDelta, uint256 blockNumber);
 
-    // ─── Errors ───────────────────────────────────────────────────────────────
+    // Errors 
     error DirectDepositNotAllowed();
     error PoolPaused();
     error WithdrawalDuringRebalance();
     error WithdrawalNonceMismatch();
     error PostRebalanceDeltaExceedsThreshold();
     error CallerNotPoolManager();
-    error NotVault();
+    error NotDepositor();
     error NotDeployer();
     error PositionAlreadyExists();
     error InvalidTickRange();
 
-    // ─── Constructor ──────────────────────────────────────────────────────────
-    constructor(IPoolManager _manager) BaseHook(_manager) {
-        deployer = msg.sender;
+    // Constructor 
+    constructor(IPoolManager _manager, address _admin) BaseHook(_manager) {
+        deployer = _admin;
     }
 
     function setRscRelay(address _relay) external {
@@ -112,18 +108,18 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         rscRelay = _relay;
     }
 
-    function setVault(address _vault) external {
+    function setDepositor(address _depositor) external {
         if (msg.sender != deployer) revert NotDeployer();
-        require(vault == address(0), "vault already set");
-        vault = _vault;
+        require(depositor == address(0), "depositor already set");
+        depositor = _depositor;
     }
 
-    // ─── Hook Permissions ─────────────────────────────────────────────────────
+    // Hook Permissions 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
             afterInitialize: false,
-            beforeAddLiquidity: true, // enforce vault-only deposits
+            beforeAddLiquidity: true, // enforce depositor-only deposits
             afterAddLiquidity: true, // register sub-positions on deposit
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: true, // proportional unwind + nonce check
@@ -138,7 +134,7 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         });
     }
 
-    // ─── Hook Callbacks ───────────────────────────────────────────────────────
+    // Hook Callbacks 
 
     // Fast no-op in normal operation. Reverts all swaps when pool is paused.
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
@@ -150,14 +146,14 @@ contract DeltaHook is BaseHook, IUnlockCallback {
         return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
-    // Rejects any deposit that does not originate from the vault.
+    // Rejects any deposit that does not originate from the depositor.
     // Without this, direct deposits bypass sub-position splitting and silently corrupt delta accounting.
     function _beforeAddLiquidity(address sender, PoolKey calldata, ModifyLiquidityParams calldata, bytes calldata)
         internal
         override
         returns (bytes4)
     {
-        if (sender != vault) revert DirectDepositNotAllowed();
+        if (sender != depositor) revert DirectDepositNotAllowed();
         return IHooks.beforeAddLiquidity.selector;
     }
 
@@ -277,16 +273,7 @@ if (!registeredPositions[positionId]) {
             );
 
             // Out-of-range detection.
-            //
-            // Both legs returning zero means price is above the entire combined
-            // range [longVolTickLower, shortVolTickUpper]. The hook goes silent
-            // — no swaps cross active ranges — and the RSC must recover.
-            //
-            // The longVolLiquidity > 0 guard distinguishes this from a vacuously
-            // empty position where both legs return zero for a different reason.
-            //
-            // Price BELOW the combined range produces maximum delta from both
-            // legs, not zero. That case hits the rebalance path below.
+           
             if (longVolDelta == 0 && shortVolDelta == 0 && pos.longVolLiquidity > 0) {
                 emit PositionOutOfRange(positionId, block.number);
                 unchecked {
@@ -332,131 +319,6 @@ if (!registeredPositions[positionId]) {
         return (IHooks.afterSwap.selector, 0);
     }
 
-    // RSC out-of-range recovery entry point. Called by the Reactive Network relay
-    // in a fresh transaction (no existing PoolManager lock). The hook calls
-    // poolManager.unlock() which is valid here since we are NOT inside a swap.
-    function executeRebalance(bytes32 positionId) external {
-        require(msg.sender == rscRelay || msg.sender == vault, "not authorized");
-        SubPositionState storage pos = positions[positionId];
-        require(pos.owner != address(0), "position not found");
-
-        // Determine which pool this position belongs to by reading position data.
-        // We need a PoolKey to call modifyLiquidity — stored via a separate mapping.
-        PoolKey memory key = positionPoolKey[positionId];
-
-        (uint160 sqrtPriceCurrent,,,) = poolManager.getSlot0(key.toId());
-
-        _rebalancing = true;
-        stateNonce[positionId]++;
-        poolManager.unlock(abi.encode(key, positionId, sqrtPriceCurrent));
-        _rebalancing = false;
-    }
-
-    // Called by PoolManager only when the hook itself calls poolManager.unlock().
-    // This path is used exclusively by executeRebalance() (RSC out-of-range recovery).
-    // Normal in-swap rebalancing goes through _executeRebalance() directly.
-    function unlockCallback(bytes calldata data) external override returns (bytes memory) {
-        if (msg.sender != address(poolManager)) revert CallerNotPoolManager();
-        (PoolKey memory key, bytes32 positionId, uint160 sqrtPriceCurrent) =
-            abi.decode(data, (PoolKey, bytes32, uint160));
-        _executeRebalance(key, positionId, sqrtPriceCurrent);
-        return "";
-    }
-
-    // Core rebalance logic — called from both _afterSwap (in-swap, direct) and
-    // unlockCallback (RSC-triggered, via poolManager.unlock()).
-    // In both cases the PoolManager is in an unlocked state when this runs.
-    function _executeRebalance(PoolKey memory key, bytes32 positionId, uint160 sqrtPriceCurrent) internal {
-        SubPositionState storage pos = positions[positionId];
-
-        // Compute new symmetric ranges around the current tick.
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
-        (int24 newLongLower, int24 newLongUpper, int24 newShortLower, int24 newShortUpper) =
-            computeRanges(currentTick, key.tickSpacing);
-
-        // ── Remove old positions ──────────────────────────────────────────────
-        // liquidityDelta is negative (remove). Salt distinguishes the two legs.
-        poolManager.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({
-                tickLower: pos.longVolTickLower,
-                tickUpper: pos.longVolTickUpper,
-                liquidityDelta: -int256(uint256(pos.longVolLiquidity)),
-                salt: positionId
-            }),
-            ""
-        );
-        poolManager.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({
-                tickLower: pos.shortVolTickLower,
-                tickUpper: pos.shortVolTickUpper,
-                liquidityDelta: -int256(uint256(pos.shortVolLiquidity)),
-                salt: bytes32(uint256(positionId) ^ 1)
-            }),
-            ""
-        );
-
-        // ── Add new positions ─────────────────────────────────────────────────
-        poolManager.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({
-                tickLower: newLongLower,
-                tickUpper: newLongUpper,
-                liquidityDelta: int256(uint256(pos.longVolLiquidity)),
-                salt: positionId
-            }),
-            ""
-        );
-        poolManager.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({
-                tickLower: newShortLower,
-                tickUpper: newShortUpper,
-                liquidityDelta: int256(uint256(pos.shortVolLiquidity)),
-                salt: bytes32(uint256(positionId) ^ 1)
-            }),
-            ""
-        );
-
-        // ── Settle net token delta ────────────────────────────────────────────
-        // Remove + re-add of equal liquidity should produce ~zero net delta.
-        // Any residual is rounding dust — clear it rather than requiring a transfer.
-        int256 delta0 = poolManager.currencyDelta(address(this), key.currency0);
-        int256 delta1 = poolManager.currencyDelta(address(this), key.currency1);
-
-        if (delta0 > 0) poolManager.clear(key.currency0, uint256(delta0));
-        if (delta1 > 0) poolManager.clear(key.currency1, uint256(delta1));
-        // Negative delta (we owe the pool) should not occur for a symmetric rebalance.
-        // If it does, the transaction reverts when the PoolManager checks balances on unlock exit.
-
-        // ── Update state ──────────────────────────────────────────────────────
-        pos.longVolTickLower = newLongLower;
-        pos.longVolTickUpper = newLongUpper;
-        pos.shortVolTickLower = newShortLower;
-        pos.shortVolTickUpper = newShortUpper;
-        pos.longVolSqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(newLongLower);
-        pos.longVolSqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(newLongUpper);
-        pos.shortVolSqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(newShortLower);
-        pos.shortVolSqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(newShortUpper);
-
-        // ── Post-rebalance verification ───────────────────────────────────────
-        uint256 newLongDelta = _computeLPDelta(
-            sqrtPriceCurrent, pos.longVolSqrtPriceLowerX96, pos.longVolSqrtPriceUpperX96, pos.longVolLiquidity
-        );
-        uint256 newShortDelta = _computeLPDelta(
-            sqrtPriceCurrent, pos.shortVolSqrtPriceLowerX96, pos.shortVolSqrtPriceUpperX96, pos.shortVolLiquidity
-        );
-        int256 newNetDelta = int256(newLongDelta) + int256(newShortDelta);
-        uint256 newAbsDelta = newNetDelta >= 0 ? uint256(newNetDelta) : uint256(-newNetDelta);
-
-        // Revert entire transaction (including triggering swap) if post-rebalance
-        // delta still exceeds threshold. Prevents partial states.
-        if (newAbsDelta > pos.deltaThreshold) revert PostRebalanceDeltaExceedsThreshold();
-
-        pos.lastNetDelta = newNetDelta;
-    }
-
     function _afterRemoveLiquidity(
         address sender,
         PoolKey calldata key,
@@ -497,6 +359,7 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
 
             delete positions[positionId];
             delete stateNonce[positionId];
+            delete registeredPositions[positionId];
             _removeFromPoolPositions(key.toId(), positionId);
             emit PositionClosed(positionId, finalNetDelta);
         } else {
@@ -513,16 +376,8 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
         return (IHooks.afterRemoveLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
     }
 
-    // ─── Range Computation ────────────────────────────────────────────────────
+    //  Range Computation 
 
-    // Snap currentTick down to the nearest valid tick (multiple of tickSpacing) and
-    // build symmetric ranges above and below it.
-    //
-    // WHY the floor fix: Solidity integer division truncates toward zero, not toward -∞.
-    // For positive ticks: 105 / 10 * 10 = 100 ✓ (correct floor)
-    // For negative ticks: -105 / 10 * 10 = -100 ✗ (should be -110)
-    // Fix: subtract (tickSpacing - 1) before dividing when tick is negative, which
-    // pushes truncation in the correct direction.
     function computeRanges(int24 currentTick, int24 tickSpacing)
         internal
         pure
@@ -535,16 +390,16 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
 
         longVolTickLower = center - RANGE_WIDTH;
         longVolTickUpper = center;
-        shortVolTickLower = center;
+        shortVolTickLower = center + tickSpacing;
         shortVolTickUpper = center + RANGE_WIDTH;
     }
 
     function updatePositionRanges(bytes32 positionId) external {
-    if (msg.sender != vault) revert NotVault();
+    if (msg.sender != depositor) revert NotDepositor();
     SubPositionState storage pos = positions[positionId];
     require(pos.owner != address(0), "position not found");
     PoolKey memory key = positionPoolKey[positionId];
-    (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+    (uint160 sqrtPriceCurrent, int24 currentTick,,) = poolManager.getSlot0(key.toId());
     (int24 newLl, int24 newLu, int24 newSl, int24 newSu) = computeRanges(currentTick, key.tickSpacing);
     pos.longVolTickLower          = newLl;
     pos.longVolTickUpper          = newLu;
@@ -554,9 +409,15 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
     pos.shortVolTickUpper         = newSu;
     pos.shortVolSqrtPriceLowerX96 = TickMath.getSqrtPriceAtTick(newSl);
     pos.shortVolSqrtPriceUpperX96 = TickMath.getSqrtPriceAtTick(newSu);
+
+    // Recompute lastNetDelta against new ranges so off-chain indexers don't read a
+    // pre-rebalance value. afterSwap will overwrite this on the next swap regardless.
+    uint256 updatedLongDelta  = _computeLPDelta(sqrtPriceCurrent, pos.longVolSqrtPriceLowerX96,  pos.longVolSqrtPriceUpperX96,  pos.longVolLiquidity);
+    uint256 updatedShortDelta = _computeLPDelta(sqrtPriceCurrent, pos.shortVolSqrtPriceLowerX96, pos.shortVolSqrtPriceUpperX96, pos.shortVolLiquidity);
+    pos.lastNetDelta = int256(updatedLongDelta) + int256(updatedShortDelta);
 }
 
-    // ─── Delta Math (DeltaEngine) ─────────────────────────────────────────────
+    //  Delta Math (DeltaEngine) 
     // Pure library logic compiled into this contract. No separate deployment.
     // Returns token0 (WETH when currency1=WETH) amount held by a concentrated position.
     // For WETH as currency1 (typical Base WETH/USDC): use getAmount1Delta instead — caller's responsibility.
@@ -573,7 +434,7 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
         return SqrtPriceMath.getAmount0Delta(sqrtPriceCurrentX96, sqrtPriceUpperX96, liquidity, false);
     }
 
-    // ─── View helpers ─────────────────────────────────────────────────────────
+    //  View helpers 
 
     function getPosition(bytes32 positionId) external view returns (SubPositionState memory) {
         return positions[positionId];
@@ -583,9 +444,9 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
         return positionPoolKey[positionId];
     }
 
-    // ─── Admin ────────────────────────────────────────────────────────────────
+    //  Admin 
     function pausePool(PoolId poolId) external {
-        if (msg.sender != vault) revert NotVault();
+        if (msg.sender != depositor) revert NotDepositor();
         paused[poolId] = true;
     }
 
@@ -594,7 +455,7 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
         paused[poolId] = false;
     }
 
-    // ─── Internal Helpers ─────────────────────────────────────────────────────
+    //  Internal Helpers 
     function _removeFromPoolPositions(PoolId poolId, bytes32 positionId) internal {
         bytes32[] storage arr = poolPositions[poolId];
         for (uint256 i = 0; i < arr.length; i++) {

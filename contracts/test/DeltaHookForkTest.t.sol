@@ -101,12 +101,12 @@ contract DeltaHookForkTest is Test {
                 | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
         );
         (address hookAddr, bytes32 salt) =
-            HookMiner.find(address(this), flags, type(DeltaHook).creationCode, abi.encode(address(manager)));
-        hook = new DeltaHook{salt: salt}(manager);
+            HookMiner.find(address(this), flags, type(DeltaHook).creationCode, abi.encode(address(manager), address(this)));
+        hook = new DeltaHook{salt: salt}(manager, address(this));
         require(address(hook) == hookAddr, "hook address mismatch");
 
         depositor = new DeltaDepositor(manager, hook);
-        hook.setVault(address(depositor));
+        hook.setDepositor(address(depositor));
 
         key = PoolKey({
             currency0: currency0,
@@ -195,9 +195,9 @@ contract DeltaHookForkTest is Test {
 
         assertEq(pos.longVolLiquidity, LIQUIDITY / 2);
         assertEq(pos.shortVolLiquidity, LIQUIDITY / 2);
-        // At tick=0 pool, center=0, long-vol upper=0, short-vol lower=0
+        // At tick=0 pool, center=0, long-vol upper=0, short-vol lower=TICK_SPACING
         assertEq(pos.longVolTickUpper, 0);
-        assertEq(pos.shortVolTickLower, 0);
+        assertEq(pos.shortVolTickLower, TICK_SPACING);
         assertEq(pos.longVolTickLower, -int24(hook.RANGE_WIDTH()));
         assertEq(pos.shortVolTickUpper, int24(hook.RANGE_WIDTH()));
 
@@ -273,7 +273,7 @@ contract DeltaHookForkTest is Test {
             : (tickAfterRebalance / spacing) * spacing;
 
         assertEq(after_.longVolTickUpper, expectedCenter, "long-vol upper not at new center");
-        assertEq(after_.shortVolTickLower, expectedCenter, "short-vol lower not at new center");
+        assertEq(after_.shortVolTickLower, expectedCenter + TICK_SPACING, "short-vol lower not at new center");
         assertEq(after_.deltaThreshold, DEMO_THRESHOLD, "threshold corrupted by rebalance");
 
         // Tick must have moved meaningfully from the deposit tick.

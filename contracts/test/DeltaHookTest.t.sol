@@ -84,13 +84,12 @@ contract DeltaHookTest is Test {
                 | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
         );
         (address hookAddr, bytes32 salt) =
-            HookMiner.find(address(this), flags, type(DeltaHook).creationCode, abi.encode(address(manager)));
-        hook = new DeltaHook{salt: salt}(IPoolManager(address(manager)));
+            HookMiner.find(address(this), flags, type(DeltaHook).creationCode, abi.encode(address(manager), address(this)));
+        hook = new DeltaHook{salt: salt}(IPoolManager(address(manager)), address(this));
         assertEq(address(hook), hookAddr, "hook address mismatch -- permission flags wrong");
 
-        // Depositor is the vault for this single-user MVP
         depositor = new DeltaDepositor(IPoolManager(address(manager)), hook);
-        hook.setVault(address(depositor));
+        hook.setDepositor(address(depositor));
 
         key = PoolKey({
             currency0: currency0,
@@ -142,11 +141,11 @@ contract DeltaHookTest is Test {
 
     // ─── Access control ───────────────────────────────────────────────────────
 
-    /// Any caller that is not the vault must be rejected by beforeAddLiquidity.
+    /// Any caller that is not the depositor must be rejected by beforeAddLiquidity.
     /// v4 wraps hook reverts in CustomRevert.WrappedError — expectRevert() without
     /// an argument asserts the call reverts for any reason.
     function test_beforeAddLiquidity_revertsDirectDeposit() public {
-        // modifyLiqRouter is not the vault; the hook must reject it.
+        // modifyLiqRouter is not the depositor; the hook must reject it.
         vm.expectRevert();
         modifyLiqRouter.modifyLiquidity(
             key,
@@ -182,7 +181,7 @@ contract DeltaHookTest is Test {
         // Pool initialised at tick=0, spacing=10 → center=0
         int24 expectedCenter = 0;
         assertEq(pos.longVolTickUpper, expectedCenter, "long-vol upper");
-        assertEq(pos.shortVolTickLower, expectedCenter, "short-vol lower");
+        assertEq(pos.shortVolTickLower, expectedCenter + TICK_SPACING, "short-vol lower");
         assertEq(pos.longVolTickLower, expectedCenter - hook.RANGE_WIDTH(), "long-vol lower");
         assertEq(pos.shortVolTickUpper, expectedCenter + hook.RANGE_WIDTH(), "short-vol upper");
 
@@ -288,7 +287,7 @@ contract DeltaHookTest is Test {
             : (tickAfterSwap / spacing) * spacing;
 
         assertEq(pos.longVolTickUpper, expectedCenter, "long-vol upper not updated");
-        assertEq(pos.shortVolTickLower, expectedCenter, "short-vol lower not updated");
+        assertEq(pos.shortVolTickLower, expectedCenter + TICK_SPACING, "short-vol lower not updated");
     }
 
     /// triggerRebalance must preserve the original deltaThreshold — not zero it.
