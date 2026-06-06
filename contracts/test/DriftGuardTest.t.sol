@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-// forge test --match-contract ComputeLPDeltaTest -vvv
-// forge test --match-contract ComputeRangesTest -vvv
-
 import {Test, console2} from "forge-std/Test.sol";
 import {SqrtPriceMath} from "@uniswap/v4-core/src/libraries/SqrtPriceMath.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ComputeLPDelta tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 contract ComputeLPDeltaHarness {
     function computeLPDelta(
@@ -70,11 +65,7 @@ contract ComputeLPDeltaTest is Test {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // ComputeRanges tests
-// Verifies the tick-floor logic in DeltaHook.computeRanges(), especially the
-// negative-tick correction (Solidity truncates toward zero, not toward -∞).
-// ─────────────────────────────────────────────────────────────────────────────
 
 contract ComputeRangesHarness {
     int24 public constant RANGE_WIDTH = 2000;

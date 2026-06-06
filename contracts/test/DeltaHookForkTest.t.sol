@@ -2,23 +2,23 @@
 pragma solidity ^0.8.26;
 
 /**
- * Fork test — full demo cycle on real Base Sepolia v4 infrastructure.
+ * Fork test — full demo cycle on real Unichain v4 infrastructure.
  *
  * What this proves:
  *   - DeltaHook + DeltaDepositor deploy and operate correctly against the live
- *     Base Sepolia PoolManager (not a local mock).
+ *     Unichain PoolManager (not a local mock).
  *   - The deposit → swap → RebalanceNeeded → triggerRebalance cycle runs end-to-end.
  *   - After rebalancing, the hook's stored tick ranges are re-centred on the new price.
  *   - Multiple rebalance cycles complete without regression (stale-range bug check).
  *
  * Required env vars:
- *   BASE_SEPOLIA_RPC_URL      — Base Sepolia RPC endpoint (Alchemy / QuickNode)
- *   BASE_SEPOLIA_POOL_MANAGER — Uniswap v4 PoolManager address on Base Sepolia
+ *   UNICHAIN_RPC_URL      — Unichain RPC endpoint (Alchemy / QuickNode)
+ *   UNICHAIN_POOL_MANAGER — Uniswap v4 PoolManager address on Unichain
  *
  * Run:
  *   forge test --match-contract DeltaHookForkTest -vvv
  *
- * Tests are silently skipped (no failure) when BASE_SEPOLIA_RPC_URL is unset, so
+ * Tests are silently skipped (no failure) when UNICHAIN_RPC_URL is unset, so
  * CI passes without credentials while local dev can run the full suite.
  */
 
@@ -42,7 +42,7 @@ contract DeltaHookForkTest is Test {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
-    // ─── Contracts ────────────────────────────────────────────────────────────
+    //  Contracts 
     IPoolManager manager;
     DeltaHook hook;
     DeltaDepositor depositor;
@@ -54,9 +54,7 @@ contract DeltaHookForkTest is Test {
     Currency currency1;
     PoolKey key;
 
-    // ─── Demo parameters ──────────────────────────────────────────────────────
-    // These match the hackathon demo narrative: large liquidity, small threshold
-    // so every meaningful swap triggers a RebalanceNeeded event.
+    //  Demo parameters 
     int24 constant TICK_SPACING = 10;
     uint24 constant FEE = 3000;
     uint160 constant SQRT_PRICE_TICK0 = 79228162514264337593543950336;
@@ -65,15 +63,15 @@ contract DeltaHookForkTest is Test {
     // Production calibration note: size this to ~0.05–0.1 * position_value_in_token0.
     uint256 constant DEMO_THRESHOLD = 1;
 
-    // ─── Events ───────────────────────────────────────────────────────────────
+    //  Events 
     event RebalanceNeeded(bytes32 indexed positionId, int256 netDelta, uint256 blockNumber);
 
-    // ─── Skip flag ────────────────────────────────────────────────────────────
+    //  Skip flag 
     bool private _noFork;
 
-    // ─── setUp ────────────────────────────────────────────────────────────────
+    //  setUp 
     function setUp() public {
-        string memory rpc = vm.envOr("BASE_SEPOLIA_RPC_URL", string(""));
+        string memory rpc = vm.envOr("UNICHAIN_RPC_URL", string(""));
         if (bytes(rpc).length == 0) {
             _noFork = true;
             return;
@@ -82,8 +80,8 @@ contract DeltaHookForkTest is Test {
         vm.createSelectFork(rpc);
 
         // Resolve PoolManager — must be supplied when running fork tests.
-        address pm = vm.envOr("BASE_SEPOLIA_POOL_MANAGER", address(0));
-        require(pm != address(0), "set BASE_SEPOLIA_POOL_MANAGER to the v4 PoolManager on Base Sepolia");
+        address pm = vm.envOr("UNICHAIN_POOL_MANAGER", address(0));
+        require(pm != address(0), "set UNICHAIN_POOL_MANAGER to the v4 PoolManager on Unichain");
         manager = IPoolManager(pm);
 
         swapRouter = new PoolSwapTest(manager);
@@ -125,7 +123,7 @@ contract DeltaHookForkTest is Test {
         token1.approve(address(swapRouter), type(uint256).max);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    //  Helpers 
 
     function _skip() private view returns (bool) {
         return _noFork;
@@ -164,11 +162,11 @@ contract DeltaHookForkTest is Test {
         }
     }
 
-    // ─── Fork tests ───────────────────────────────────────────────────────────
+    //  Fork tests 
 
     /**
-     * Sanity: hook and depositor deploy against the real Base Sepolia PoolManager.
-     * If this fails, the Base Sepolia PoolManager address or RPC is misconfigured.
+     * Sanity: hook and depositor deploy against the real Unichain PoolManager.
+     * If this fails, the Unichain PoolManager address or RPC is misconfigured.
      */
     function test_fork_deploymentSanity() public {
         if (_skip()) return;
@@ -216,12 +214,11 @@ contract DeltaHookForkTest is Test {
      *   3. triggerRebalance → tick ranges re-centred on new price
      *   4. Verify delta is now symmetric around new price (post-rebalance delta < pre-rebalance delta)
      *
-     * This is the "Minute 3" scenario from the hackathon demo script.
      */
     function test_fork_demoCycle_depositSwapRebalance() public {
         if (_skip()) return;
 
-        // ── Step 1: Deposit ───────────────────────────────────────────────────
+        //  Step 1: Deposit 
         bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
         DeltaHook.SubPositionState memory before = hook.getPosition(positionId);
         int256 deltaAtDeposit = before.lastNetDelta;
@@ -231,7 +228,7 @@ contract DeltaHookForkTest is Test {
         console2.log("[1] Tick at deposit  :", tickAtDeposit);
         console2.log("[1] Net delta        :", deltaAtDeposit);
 
-        // ── Step 2: Simulate price move, capture RebalanceNeeded ─────────────
+        //  Step 2: Simulate price move, capture RebalanceNeeded 
         vm.recordLogs();
         _simulate15PctDown();
 
@@ -252,7 +249,7 @@ contract DeltaHookForkTest is Test {
         }
         assertTrue(rnEmitted, "RebalanceNeeded was not emitted after price move");
 
-        // ── Step 3: Rebalance ─────────────────────────────────────────────────
+        //  Step 3: Rebalance 
         depositor.triggerRebalance(positionId);
 
         DeltaHook.SubPositionState memory after_ = hook.getPosition(positionId);
@@ -265,7 +262,7 @@ contract DeltaHookForkTest is Test {
         console2.log("[3] New short-vol upper:", int256(after_.shortVolTickUpper));
         console2.log("[3] Post-rebalance delta:", after_.lastNetDelta);
 
-        // ── Step 4: Assertions ────────────────────────────────────────────────
+        //  Step 4: Assertions 
         // Ranges must be re-centred on the new price.
         int24 spacing = TICK_SPACING;
         int24 expectedCenter = tickAfterRebalance < 0

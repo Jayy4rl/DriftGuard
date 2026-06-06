@@ -25,7 +25,7 @@ contract DeltaHookTest is Test {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
-    // ─── Contracts ────────────────────────────────────────────────────────────
+    //  Contracts 
     IPoolManager manager;
     DeltaHook hook;
     DeltaDepositor depositor;
@@ -38,7 +38,7 @@ contract DeltaHookTest is Test {
     Currency currency1;
     PoolKey key;
 
-    // ─── Constants ────────────────────────────────────────────────────────────
+    //  Constants 
     // tickSpacing=10 keeps RANGE_WIDTH=2000 aligned to all produced tick values.
     int24 constant TICK_SPACING = 10;
     uint24 constant FEE = 3000;
@@ -50,7 +50,7 @@ contract DeltaHookTest is Test {
     // Effectively infinite: never exceeded
     uint256 constant HUGE_THRESHOLD = type(uint256).max;
 
-    // ─── Event mirrors (for vm.expectEmit) ───────────────────────────────────
+    //  Event mirrors (for vm.expectEmit) 
     event PositionRegistered(
         bytes32 indexed positionId,
         address indexed owner,
@@ -64,7 +64,7 @@ contract DeltaHookTest is Test {
     event PositionClosed(bytes32 indexed positionId, int256 finalNetDelta);
     event PositionOutOfRange(bytes32 indexed positionId, uint256 blockNumber);
 
-    // ─── setUp ────────────────────────────────────────────────────────────────
+    //  setUp 
     function setUp() public {
         manager = new PoolManager(address(this));
 
@@ -108,7 +108,7 @@ contract DeltaHookTest is Test {
         token1.approve(address(swapRouter), type(uint256).max);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    //  Helpers 
 
     function _deposit(uint128 liq, uint256 threshold) internal returns (bytes32) {
         return depositor.deposit(key, liq, threshold);
@@ -139,7 +139,7 @@ contract DeltaHookTest is Test {
         );
     }
 
-    // ─── Access control ───────────────────────────────────────────────────────
+    //  Access control 
 
     /// Any caller that is not the depositor must be rejected by beforeAddLiquidity.
     /// v4 wraps hook reverts in CustomRevert.WrappedError — expectRevert() without
@@ -167,7 +167,7 @@ contract DeltaHookTest is Test {
         _swapDown(1e15);
     }
 
-    // ─── Position registration ────────────────────────────────────────────────
+    //  Position registration 
 
     /// SubPositionState must be fully populated after deposit.
     function test_deposit_registersSubPositions() public {
@@ -219,7 +219,7 @@ contract DeltaHookTest is Test {
         assertGt(hook.getPosition(id2).longVolLiquidity, 0);
     }
 
-    // ─── Withdrawal ───────────────────────────────────────────────────────────
+    // Withdrawal 
 
     /// Full withdrawal must delete position state and emit PositionClosed.
     function test_withdraw_deletesStateAndEmitsEvent() public {
@@ -232,7 +232,7 @@ contract DeltaHookTest is Test {
         assertEq(hook.getPosition(positionId).owner, address(0), "position not deleted");
     }
 
-    // ─── afterSwap event emission ─────────────────────────────────────────────
+    //  afterSwap event emission 
 
     /// RebalanceNeeded must fire on any swap when the threshold is trivially small.
     function test_afterSwap_emitsRebalanceNeeded_whenThresholdBreached() public {
@@ -269,7 +269,7 @@ contract DeltaHookTest is Test {
         _swapPastAllRanges();
     }
 
-    // ─── Rebalance correctness ────────────────────────────────────────────────
+    //  Rebalance correctness 
 
     /// triggerRebalance must update tick ranges in SubPositionState.
     function test_triggerRebalance_updatesHookStateRanges() public {
@@ -343,7 +343,7 @@ contract DeltaHookTest is Test {
         assertEq(hook.getPosition(positionId).owner, address(0), "position not cleaned up");
     }
 
-    // ─── Fuzz ─────────────────────────────────────────────────────────────────
+    //  Fuzz 
 
     /// The hook must never cause a downward swap to revert regardless of size.
     function testFuzz_afterSwap_neverRevertsDown(uint128 amount) public {

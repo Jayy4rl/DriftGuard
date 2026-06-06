@@ -1,3 +1,8 @@
-# Foundry dependencies and build artifacts
-contracts/lib/
+# Foundry build artifacts
 contracts/out/
+
+# Any forge-installed libs that are not registered submodules
+contracts/lib/
+
+# Environment — contains private keys and RPC URLs
+.env

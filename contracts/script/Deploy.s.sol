@@ -1,42 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-/**
- * Deploy DeltaHook + DeltaDepositor to Unichain and wire them together.
- *
- * Required env vars:
- *   PRIVATE_KEY               — deployer wallet private key (hex, no 0x prefix)
- *   UNICHAIN_POOL_MANAGER     — Uniswap v4 PoolManager address on Unichain
- *   RN_CALLBACK_PROXY         — Reactive Network Callback Proxy on Unichain
- *                               (get from https://dev.reactive.network/deployments)
- *
- * Optional env vars:
- *   CURRENCY0                 — token0 address (default: zero address = native ETH)
- *   CURRENCY1                 — token1 address (e.g. USDC on Unichain Sepolia)
- *   POOL_FEE                  — fee tier in hundredths of a bip (default: 3000 = 0.3%)
- *   TICK_SPACING              — tick spacing (default: 10; must divide RANGE_WIDTH=2000)
- *   INITIAL_TICK              — pool initialisation tick (default: 0 = 1:1 ratio)
- *   DELTA_THRESHOLD           — rebalance threshold in token0 units (default: 5e16)
- *
- * Run (dry-run):
- *   forge script script/Deploy.s.sol \
- *     --rpc-url $UNICHAIN_SEPOLIA_RPC_URL \
- *     --private-key $PRIVATE_KEY \
- *     -vvv
- *
- * Run (broadcast):
- *   forge script script/Deploy.s.sol \
- *     --rpc-url $UNICHAIN_SEPOLIA_RPC_URL \
- *     --private-key $PRIVATE_KEY \
- *     --broadcast \
- *     --verify \
- *     -vvv
- *
- * Unichain addresses (verify before deploying):
- *   Unichain Mainnet  chain ID 130  https://uniscan.xyz
- *   Unichain Sepolia  chain ID 1301 https://sepolia.uniscan.xyz
- */
-
 import {Script, console2} from "forge-std/Script.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
@@ -49,118 +13,111 @@ import {DeltaHook} from "../src/DriftGuard.sol";
 import {DeltaDepositor} from "../src/DeltaDepositor.sol";
 
 contract Deploy is Script {
-    // ─── Constants ────────────────────────────────────────────────────────────
+    //  Constants 
 
-    // Default tick spacing — must divide RANGE_WIDTH=2000 evenly.
-    // tickSpacing=10 → 2000 / 10 = 200 ✓
-    int24 constant DEFAULT_TICK_SPACING = 10;
-    uint24 constant DEFAULT_FEE = 3000; // 0.3%
-    // Default threshold: 0.05 ETH (5e16 wei). Calibrate to ~0.1% of position value.
-    uint256 constant DEFAULT_DELTA_THRESHOLD = 5e16;
+    int24 constant DEFAULT_TICK_SPACING = 10; // must divide RANGE_WIDTH=2000
+    uint24 constant DEFAULT_FEE = 3000;       // 0.3%
+
+    //  Shared state (set once in run, read by helpers) 
+    IPoolManager internal _manager;
+
+    //  Entry point 
 
     function run() external {
-        // ── Env vars ──────────────────────────────────────────────────────────
+        _manager = IPoolManager(vm.envAddress("UNICHAIN_POOL_MANAGER"));
+
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
-        address poolManagerAddr = vm.envAddress("UNICHAIN_POOL_MANAGER");
-        address rnCallbackProxy = vm.envOr("RN_CALLBACK_PROXY", address(0));
+        vm.startBroadcast(deployerKey);
 
-        address currency0Addr = vm.envOr("CURRENCY0", address(0));    // native ETH by default
-        address currency1Addr = vm.envOr("CURRENCY1", address(0));
-        uint24 fee = uint24(vm.envOr("POOL_FEE", uint256(DEFAULT_FEE)));
-        int24 tickSpacing = int24(int256(vm.envOr("TICK_SPACING", uint256(uint24(DEFAULT_TICK_SPACING)))));
-        int24 initialTick = int24(int256(vm.envOr("INITIAL_TICK", uint256(0))));
-        uint256 deltaThreshold = vm.envOr("DELTA_THRESHOLD", DEFAULT_DELTA_THRESHOLD);
+        (DeltaHook hook, DeltaDepositor depositor) = _deploy(deployer);
+        _configure(hook, depositor);
+        _initPool(hook);
 
-        IPoolManager manager = IPoolManager(poolManagerAddr);
+        vm.stopBroadcast();
 
-        // ── Hook address mining ───────────────────────────────────────────────
-        // In scripts the CREATE2 caller is the deployer wallet (the address that
-        // signs the broadcast), NOT the script contract. Using address(this) here
-        // would mine the wrong salt and the BaseHook constructor would revert.
+        _logSummary(deployer, address(hook), address(depositor));
+    }
+
+    //  Internal helpers 
+
+    function _deploy(address admin) internal returns (DeltaHook hook, DeltaDepositor depositor) {
         uint160 flags = uint160(
             Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG | Hooks.BEFORE_ADD_LIQUIDITY_FLAG
                 | Hooks.AFTER_ADD_LIQUIDITY_FLAG | Hooks.AFTER_REMOVE_LIQUIDITY_FLAG
         );
 
-        console2.log("Mining hook address for deployer:", deployer);
-        (address hookAddr, bytes32 salt) =
-            HookMiner.find(deployer, flags, type(DeltaHook).creationCode, abi.encode(address(manager)));
-        console2.log("Hook address found  :", hookAddr);
-        console2.log("CREATE2 salt        :", uint256(salt));
+        (address hookAddr, bytes32 salt) = HookMiner.find(
+            CREATE2_FACTORY, flags, type(DeltaHook).creationCode, abi.encode(address(_manager), admin)
+        );
 
-        // ── Deployment ────────────────────────────────────────────────────────
-        vm.startBroadcast(deployerKey);
-
-        // 1. Deploy DeltaHook at the mined CREATE2 address.
-        //    `new Hook{salt: salt}(...)` uses CREATE2 with msg.sender (= deployer
-        //    wallet inside broadcast) as the factory — matching what HookMiner computed.
-        DeltaHook hook = new DeltaHook{salt: salt}(manager);
+        hook = new DeltaHook{salt: salt}(_manager, admin);
         require(address(hook) == hookAddr, "hook address mismatch: wrong salt or flags");
 
-        // 2. Deploy DeltaDepositor. depositorOwner = deployer wallet (msg.sender).
-        DeltaDepositor depositor = new DeltaDepositor(manager, hook);
+        depositor = new DeltaDepositor(_manager, hook);
+    }
 
-        // 3. Wire vault — one-time; deployer becomes hook.deployer at construction.
-        hook.setVault(address(depositor));
+    function _configure(DeltaHook hook, DeltaDepositor depositor) internal {
+        hook.setDepositor(address(depositor));
 
-        // 4. Authorise Reactive Network callback proxy so RSC can call triggerRebalance.
-        //    Skip if RN_CALLBACK_PROXY was not provided (useful for dry-runs).
-        if (rnCallbackProxy != address(0)) {
-            hook.setRscRelay(rnCallbackProxy);
+        address rnProxy = vm.envOr("RN_CALLBACK_PROXY", address(0));
+        if (rnProxy != address(0)) {
+            hook.setRscRelay(rnProxy);
+        }
+    }
+
+    function _initPool(DeltaHook hook) internal {
+        address c0 = vm.envOr("CURRENCY0", address(0));
+        address c1 = vm.envOr("CURRENCY1", address(0));
+
+        if (c1 == address(0)) {
+            console2.log("CURRENCY1 not set -- pool not initialised.");
+            return;
         }
 
-        // 5. Initialise pool if both currency addresses are provided.
-        //    If CURRENCY1 is zero we skip pool initialisation — do it separately
-        //    once you have the real token addresses for Unichain.
-        if (currency1Addr != address(0)) {
-            // Sort currencies: v4 requires currency0 < currency1 by address.
-            if (currency0Addr > currency1Addr) {
-                (currency0Addr, currency1Addr) = (currency1Addr, currency0Addr);
-            }
+        uint24 fee = uint24(vm.envOr("POOL_FEE", uint256(DEFAULT_FEE)));
+        int24 spacing = int24(int256(vm.envOr("TICK_SPACING", uint256(uint24(DEFAULT_TICK_SPACING)))));
+        // vm.envOr with int256 default reads the var as signed, so negative ticks
+        // (e.g. -207243 for ETH/USDC at ~$3000) are handled correctly.
+        int24 tick = int24(vm.envOr("INITIAL_TICK", int256(0)));
 
-            PoolKey memory poolKey = PoolKey({
-                currency0: Currency.wrap(currency0Addr),
-                currency1: Currency.wrap(currency1Addr),
-                fee: fee,
-                tickSpacing: tickSpacing,
-                hooks: IHooks(address(hook))
-            });
+        // v4 requires currency0 < currency1 by address value.
+        if (c0 > c1) (c0, c1) = (c1, c0);
 
-            uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(initialTick);
-            manager.initialize(poolKey, sqrtPriceX96);
+        PoolKey memory key = PoolKey({
+            currency0: Currency.wrap(c0),
+            currency1: Currency.wrap(c1),
+            fee: fee,
+            tickSpacing: spacing,
+            hooks: IHooks(address(hook))
+        });
 
-            console2.log("Pool initialised:");
-            console2.log("  currency0   :", currency0Addr);
-            console2.log("  currency1   :", currency1Addr);
-            console2.log("  fee         :", fee);
-            console2.log("  tickSpacing :", uint256(int256(tickSpacing)));
-            console2.log("  initialTick :", uint256(int256(initialTick)));
-        } else {
-            console2.log("CURRENCY1 not set -- pool not initialised. Run InitPool.s.sol after.");
-        }
+        _manager.initialize(key, TickMath.getSqrtPriceAtTick(tick));
 
-        vm.stopBroadcast();
+        console2.log("Pool initialised:");
+        console2.log("  currency0   :", c0);
+        console2.log("  currency1   :", c1);
+        console2.log("  fee         :", fee);
+        console2.log("  tickSpacing :", uint256(int256(spacing)));
+        console2.log("  initialTick :", uint256(int256(tick)));
+    }
 
-        // ── Summary ───────────────────────────────────────────────────────────
+    function _logSummary(address deployer, address hook, address depositor) internal view {
         console2.log("\n=== DEPLOYMENT SUMMARY ===");
-        console2.log("Chain ID            :", block.chainid);
-        console2.log("Deployer            :", deployer);
-        console2.log("DeltaHook           :", address(hook));
-        console2.log("DeltaDepositor      :", address(depositor));
-        console2.log("PoolManager         :", poolManagerAddr);
-        console2.log("RSC relay set       :", rnCallbackProxy != address(0));
-        console2.log("");
-        console2.log("Next steps:");
-        console2.log("  1. Note DeltaHook and DeltaDepositor addresses above.");
-        console2.log("  2. Deploy DeltaHookRSC on Reactive Network:");
-        console2.log("     forge script script/DeployRSC.s.sol \\");
-        console2.log("       --rpc-url $RN_RPC_URL \\");
-        console2.log("       --broadcast");
-        console2.log("  3. Fund RSC with ETH on Reactive Network for subscription gas.");
-        console2.log("  4. If RN_CALLBACK_PROXY was not set, run:");
-        console2.log("     cast send $DELTA_HOOK 'setRscRelay(address)' $RN_CALLBACK_PROXY \\");
-        console2.log("       --rpc-url $UNICHAIN_SEPOLIA_RPC_URL");
+        console2.log("Chain ID          :", block.chainid);
+        console2.log("Deployer          :", deployer);
+        console2.log("DeltaHook         :", hook);
+        console2.log("DeltaDepositor    :", depositor);
+        console2.log("PoolManager       :", address(_manager));
+        console2.log("\nNext steps:");
+        console2.log("  1. Deploy RSC on Reactive Network:");
+        console2.log("       DELTA_HOOK=<hook> DELTA_DEPOSITOR=<depositor>\\");
+        console2.log("       forge script script/DeployRSC.s.sol \\");
+        console2.log("         --rpc-url $RN_RPC_URL --broadcast");
+        console2.log("  2. Fund RSC with ETH on Reactive Network for subscription gas.");
+        console2.log("  3. If RN_CALLBACK_PROXY was not set above, run:");
+        console2.log("       cast send <hook> 'setRscRelay(address)' <proxy> \\");
+        console2.log("         --rpc-url $UNICHAIN_RPC_URL");
     }
 }

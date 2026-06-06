@@ -8,10 +8,10 @@ import {IReactive} from "reactive-lib/interfaces/IReactive.sol";
 import {DeltaHookRSC} from "../src/DeltaHookRSC.sol";
 
 contract DeltaHookRSCTest is Test {
-    // ─── Contracts ────────────────────────────────────────────────────────────
+    //  Contracts 
     DeltaHookRSC rsc;
 
-    // ─── Constants ────────────────────────────────────────────────────────────
+    //  Constants 
     address constant HOOK_ADDR = address(0x1111);
     address constant DEPOSITOR_ADDR = address(0x2222);
     // Use Unichain Sepolia for tests; matches the chain ID the RSC is constructed with.
@@ -21,27 +21,20 @@ contract DeltaHookRSCTest is Test {
 
     bytes32 constant POSITION_ID = keccak256("test-position");
 
-    // ─── Event mirror for vm.expectEmit ──────────────────────────────────────
+    //  Event mirror for vm.expectEmit 
     // Signature must match IReactive.Callback exactly so topic hashes agree.
     event Callback(uint256 indexed chain_id, address indexed _contract, uint64 indexed gas_limit, bytes payload);
 
-    // ─── setUp ────────────────────────────────────────────────────────────────
+    //  setUp 
     function setUp() public {
-        // In Foundry, vm=true (no code at 0x...fffFfF) so:
-        //   - vmOnly modifier passes → react() is callable
-        //   - rnOnly modifier fails  → setDepositor/setHook/pause/resume cannot be called
-        // The RSC constructor skips subscriptions (if (!vm) block) so it deploys cleanly.
+       
         rsc = new DeltaHookRSC(HOOK_ADDR, DEPOSITOR_ADDR, CHAIN_ID);
 
-        // Foundry starts at block.timestamp=1. The RSC checks:
-        //   block.timestamp < lastRecoveryTimestamp[id] + RECOVERY_COOLDOWN
-        // With timestamp=1 and lastRecovery=0: 1 < 300 → true → every first call
-        // is silently dropped as if the cooldown were still active.
-        // Warp past the cooldown so the first react() in each test actually fires.
+       
         vm.warp(RECOVERY_COOLDOWN + 1);
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    // Helpers 
 
     function _makeLog(uint256 topic0, bytes32 positionId) internal view returns (IReactive.LogRecord memory) {
         return IReactive.LogRecord({
@@ -60,7 +53,7 @@ contract DeltaHookRSCTest is Test {
         });
     }
 
-    // ─── RebalanceNeeded ──────────────────────────────────────────────────────
+    // RebalanceNeeded 
 
     /// react() on RebalanceNeeded must emit a Callback targeting the depositor.
     function test_react_RebalanceNeeded_emitsCallback() public {
@@ -110,7 +103,7 @@ contract DeltaHookRSCTest is Test {
         rsc.react(log);
     }
 
-    // ─── PositionOutOfRange ───────────────────────────────────────────────────
+    //  PositionOutOfRange 
 
     /// react() on PositionOutOfRange must emit the same triggerRebalance Callback.
     function test_react_OutOfRange_emitsCallback() public {
@@ -142,7 +135,7 @@ contract DeltaHookRSCTest is Test {
         }
     }
 
-    // ─── PositionClosed ───────────────────────────────────────────────────────
+    //  PositionClosed 
 
     /// react() on PositionClosed must mark the position closed and emit nothing.
     function test_react_PositionClosed_marksClosedNoCallback() public {
@@ -183,7 +176,7 @@ contract DeltaHookRSCTest is Test {
         assertEq(rsc.lastRecoveryTimestamp(POSITION_ID), 0, "timestamp not cleared by PositionClosed");
     }
 
-    // ─── PositionInvariantViolated ────────────────────────────────────────────
+    //  PositionInvariantViolated 
 
     /// react() on PositionInvariantViolated must emit an emergencyPause Callback.
     function test_react_InvariantViolated_emitsEmergencyPauseCallback() public {
@@ -215,7 +208,7 @@ contract DeltaHookRSCTest is Test {
         rsc.react(log);
     }
 
-    // ─── Unknown topic ────────────────────────────────────────────────────────
+    //  Unknown topic 
 
     /// An unrecognised topic_0 must produce no Callback.
     function test_react_unknownTopic_emitsNothing() public {
@@ -231,7 +224,7 @@ contract DeltaHookRSCTest is Test {
         }
     }
 
-    // ─── Cooldown is per-position ─────────────────────────────────────────────
+    // Cooldown is per-position 
 
     /// Cooldown for one positionId must not affect a different positionId.
     function test_react_cooldown_isolatedPerPosition() public {
