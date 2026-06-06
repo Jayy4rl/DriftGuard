@@ -9,14 +9,12 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientStateLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {DeltaHook} from "./DriftGuard.sol";
 
 // Minimal single-user LP depositor for the DeltaHook MVP.
-// The depositor (not the hook) owns LP positions in the PoolManager.
-// This means rebalancing is depositor-triggered (via RSC relay → triggerRebalance),
-// not atomic within the triggering swap. Atomic in-swap rebalancing requires the
-// hook to own positions — a v2 architectural change.
+
 contract DeltaDepositor is IUnlockCallback {
     using PoolIdLibrary for PoolKey;
     using TransientStateLibrary for IPoolManager;
@@ -59,24 +57,31 @@ contract DeltaDepositor is IUnlockCallback {
         _;
     }
 
-    // ─── Public entry points ──────────────────────────────────────────────────
+    //  Public entry points 
 
-    // User must approve this contract to spend their currency0 and currency1.
-    // liquidityAmount is split 50/50 across the two legs.
     function deposit(PoolKey calldata key, uint128 liquidityAmount, uint256 deltaThreshold)
         external
         onlyOwner
         returns (bytes32 positionId)
     {
-        (, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        require(liquidityAmount >= 2, "liquidity too small");
+        require(deltaThreshold > 0, "threshold must be non-zero");
+
+        (uint160 sqrtPriceX96, int24 currentTick,,) = poolManager.getSlot0(key.toId());
+        require(sqrtPriceX96 != 0, "pool not initialized");
+
         int24 rw = hook.RANGE_WIDTH();
         int24 ts = key.tickSpacing;
+        require(rw % ts == 0, "RANGE_WIDTH not divisible by tickSpacing");
 
         int24 center = currentTick < 0 ? ((currentTick - ts + 1) / ts) * ts : (currentTick / ts) * ts;
+        require(center - rw >= TickMath.minUsableTick(ts), "long leg below min tick");
+        require(center + rw <= TickMath.maxUsableTick(ts), "short leg above max tick");
 
         // positionId is deterministic: same owner + same pool + same block = same id.
         // Both leg calls produce the same id so the hook accumulates them into one struct.
         positionId = keccak256(abi.encodePacked(msg.sender, key.toId(), block.number));
+        require(hook.getPosition(positionId).owner == address(0), "deposit exists for this block");
 
         poolManager.unlock(
             abi.encode(
@@ -88,7 +93,7 @@ contract DeltaDepositor is IUnlockCallback {
                     halfLiquidity: liquidityAmount / 2,
                     longLower: center - rw,
                     longUpper: center,
-                    shortLower: center,
+                    shortLower: center + ts,
                     shortUpper: center + rw,
                     deltaThreshold: deltaThreshold
                 })
@@ -98,7 +103,11 @@ contract DeltaDepositor is IUnlockCallback {
 
     function withdraw(bytes32 positionId) external onlyOwner {
         DeltaHook.SubPositionState memory pos = hook.getPosition(positionId);
+        require(pos.owner != address(0), "position does not exist");
+        require(pos.owner == msg.sender, "not position owner");
+        require(pos.longVolLiquidity > 0 && pos.shortVolLiquidity > 0, "position already being withdrawn");
         PoolKey memory key = hook.getPoolKey(positionId);
+        require(Currency.unwrap(key.currency0) != address(0), "pool key not found");
 
         poolManager.unlock(
             abi.encode(
@@ -141,7 +150,7 @@ contract DeltaDepositor is IUnlockCallback {
                     halfLiquidity: 0, // liquidity read from pos inside callback
                     longLower: center - rw, // new target ranges
                     longUpper: center,
-                    shortLower: center,
+                    shortLower: center + ts,
                     shortUpper: center + rw,
                     deltaThreshold: pos.deltaThreshold // preserve threshold so hook state stays correct
                 })
@@ -149,7 +158,7 @@ contract DeltaDepositor is IUnlockCallback {
         );
     }
 
-    // ─── Unlock callback ──────────────────────────────────────────────────────
+    //  Unlock callback 
 
     function unlockCallback(bytes calldata rawData) external override returns (bytes memory) {
         if (msg.sender != address(poolManager)) revert NotPoolManager();
@@ -163,7 +172,7 @@ contract DeltaDepositor is IUnlockCallback {
         return "";
     }
 
-    // ─── Internal handlers ────────────────────────────────────────────────────
+    //  Internal handlers 
 
     function _handleDeposit(CallbackData memory d) internal {
         // Long-vol leg (leg 0) — range below current price
@@ -278,16 +287,14 @@ contract DeltaDepositor is IUnlockCallback {
         );
 
         // Settle net token delta after remove + re-add.
-        // A rebalance across a price move can produce a non-zero net delta in either
-        // direction: positive (pool owes us surplus) or negative (we owe the pool).
-        // _settle handles the owe-pool path; _take handles the owed-by-pool path.
+       
         _settle(d.key.currency0, d.payer);
         _settle(d.key.currency1, d.payer);
         _take(d.key.currency0, d.payer);
         _take(d.key.currency1, d.payer);
     }
 
-    // ─── Settlement helpers ───────────────────────────────────────────────────
+    //  Settlement helpers 
 
     // Pay tokens we owe the pool (negative delta = we owe).
     function _settle(Currency currency, address payer) internal {
