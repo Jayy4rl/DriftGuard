@@ -85,10 +85,12 @@ contract DeltaHook is BaseHook {
     event PositionInvariantViolated(bytes32 indexed positionId, string reason);
     // Emitted when threshold is breached. Depositor's triggerRebalance() or RSC watches this.
     event RebalanceNeeded(bytes32 indexed positionId, int256 netDelta, uint256 blockNumber);
+    event PoolPaused(PoolId indexed poolId, uint256 blockNumber);
+    event PoolUnpaused(PoolId indexed poolId, uint256 blockNumber);
 
     // Errors 
     error DirectDepositNotAllowed();
-    error PoolPaused();
+    error PoolIsPaused();
     error WithdrawalDuringRebalance();
     error WithdrawalNonceMismatch();
     error PostRebalanceDeltaExceedsThreshold();
@@ -142,7 +144,7 @@ contract DeltaHook is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        if (paused[key.toId()]) revert PoolPaused();
+        if (paused[key.toId()]) revert PoolIsPaused();
         return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
@@ -448,11 +450,13 @@ if (hookData.length == 0) return (IHooks.afterRemoveLiquidity.selector, BalanceD
     function pausePool(PoolId poolId) external {
         if (msg.sender != depositor) revert NotDepositor();
         paused[poolId] = true;
+        emit PoolPaused(poolId, block.number);
     }
 
     function unpausePool(PoolId poolId) external {
         if (msg.sender != deployer) revert NotDeployer();
         paused[poolId] = false;
+        emit PoolUnpaused(poolId, block.number);
     }
 
     //  Internal Helpers 
