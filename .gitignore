@@ -5,4 +5,4 @@ contracts/out/
 contracts/lib/
 
 # Environment — contains private keys and RPC URLs
-.env
+contracts/.env

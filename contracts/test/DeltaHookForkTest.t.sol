@@ -66,14 +66,11 @@ contract DeltaHookForkTest is Test {
     //  Events 
     event RebalanceNeeded(bytes32 indexed positionId, int256 netDelta, uint256 blockNumber);
 
-    //  Skip flag 
-    bool private _noFork;
-
-    //  setUp 
+    //  setUp
     function setUp() public {
         string memory rpc = vm.envOr("UNICHAIN_RPC_URL", string(""));
         if (bytes(rpc).length == 0) {
-            _noFork = true;
+            vm.skip(true);
             return;
         }
 
@@ -125,10 +122,6 @@ contract DeltaHookForkTest is Test {
 
     //  Helpers 
 
-    function _skip() private view returns (bool) {
-        return _noFork;
-    }
-
     function _swapDown(int256 amount) private {
         swapRouter.swap(
             key,
@@ -169,9 +162,7 @@ contract DeltaHookForkTest is Test {
      * If this fails, the Unichain PoolManager address or RPC is misconfigured.
      */
     function test_fork_deploymentSanity() public {
-        if (_skip()) return;
-
-        assertNotEq(address(hook), address(0), "hook not deployed");
+assertNotEq(address(hook), address(0), "hook not deployed");
         assertNotEq(address(depositor), address(0), "depositor not deployed");
         assertEq(address(hook.poolManager()), address(manager), "hook points to wrong PoolManager");
 
@@ -186,9 +177,7 @@ contract DeltaHookForkTest is Test {
      * Verifies tick ranges, liquidity, and precomputed sqrtPrice bounds.
      */
     function test_fork_deposit_registersSubPositions() public {
-        if (_skip()) return;
-
-        bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
+bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
         DeltaHook.SubPositionState memory pos = hook.getPosition(positionId);
 
         assertEq(pos.longVolLiquidity, LIQUIDITY / 2);
@@ -216,9 +205,7 @@ contract DeltaHookForkTest is Test {
      *
      */
     function test_fork_demoCycle_depositSwapRebalance() public {
-        if (_skip()) return;
-
-        //  Step 1: Deposit 
+//  Step 1: Deposit 
         bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
         DeltaHook.SubPositionState memory before = hook.getPosition(positionId);
         int256 deltaAtDeposit = before.lastNetDelta;
@@ -285,9 +272,7 @@ contract DeltaHookForkTest is Test {
      * Each cycle moves price ~15%, rebalances, then verifies position integrity.
      */
     function test_fork_multiCycleStability() public {
-        if (_skip()) return;
-
-        bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
+bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
 
         console2.log("\n=== MULTI-CYCLE STABILITY ===");
         for (uint256 cycle = 1; cycle <= 3; cycle++) {
@@ -316,9 +301,7 @@ contract DeltaHookForkTest is Test {
      * full cycle and the LP can always exit.
      */
     function test_fork_withdrawAfterRebalance() public {
-        if (_skip()) return;
-
-        bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
+bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
 
         _swapDown(5e17);
         depositor.triggerRebalance(positionId);
@@ -346,9 +329,7 @@ contract DeltaHookForkTest is Test {
      * the RSC to intervene.
      */
     function test_fork_outOfRange_emitsRSCSignal() public {
-        if (_skip()) return;
-
-        bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
+bytes32 positionId = depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
         positionId; // used in event assertion below
 
         // Push price past tick = +RANGE_WIDTH (both legs out of range above).
@@ -383,9 +364,7 @@ contract DeltaHookForkTest is Test {
      * Pause enforcement on real PoolManager: after pausePool, all swaps revert.
      */
     function test_fork_pause_haltsTradingOnRealPoolManager() public {
-        if (_skip()) return;
-
-        depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
+depositor.deposit(key, LIQUIDITY, DEMO_THRESHOLD);
 
         vm.prank(address(depositor));
         hook.pausePool(key.toId());

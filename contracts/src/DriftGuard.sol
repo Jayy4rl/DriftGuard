@@ -216,22 +216,27 @@ contract DeltaHook is BaseHook {
             );
 
             pos.lastNetDelta = initialNetDelta;
-if (!registeredPositions[positionId]) {
-    registeredPositions[positionId] = true;
-    poolPositions[poolId].push(positionId);
-}
-            positionPoolKey[positionId] = key;
-            stateNonce[positionId] = block.number;
 
-            emit PositionRegistered(
-                positionId,
-                owner,
-                pos.longVolTickLower,
-                pos.longVolTickUpper,
-                pos.shortVolTickLower,
-                pos.shortVolTickUpper,
-                initialNetDelta
-            );
+            if (!registeredPositions[positionId]) {
+                registeredPositions[positionId] = true;
+                poolPositions[poolId].push(positionId);
+                positionPoolKey[positionId] = key;
+                stateNonce[positionId] = block.number;
+                emit PositionRegistered(
+                    positionId,
+                    owner,
+                    pos.longVolTickLower,
+                    pos.longVolTickUpper,
+                    pos.shortVolTickLower,
+                    pos.shortVolTickUpper,
+                    initialNetDelta
+                );
+            } else {
+                // Re-add after rebalance: bump nonce so any concurrent withdrawal
+                // retries next block, then confirm rebalance completed.
+                stateNonce[positionId] = block.number;
+                emit RebalanceExecuted(positionId, initialNetDelta, block.number);
+            }
         }
 
         return (IHooks.afterAddLiquidity.selector, BalanceDeltaLibrary.ZERO_DELTA);
