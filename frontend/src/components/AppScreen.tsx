@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, type ReactNode, type CSSProperties } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { useAccount, useConnect, useDisconnect, useChainId, useSwitchChain } from 'wagmi'
 import { injected } from 'wagmi/connectors'
+import { unichainSepolia } from '../wagmi.config'
 import {
-  Copy, ExternalLink, CheckCircle2, Loader2, Wallet, ArrowLeft,
+  Copy, ExternalLink, CheckCircle2, Loader2, ArrowLeft,
 } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, Tooltip,
@@ -73,12 +74,15 @@ function Card({ children, style }: { children: ReactNode; style?: CSSProperties 
 }
 
 // ─── Header ───────────────────────────────────────────────────────────────────
-function AppHeader({ onBack, address, isConnected, onConnect, onDisconnect }: {
+function AppHeader({ onBack, address, isConnected, wrongChain, switching, onConnect, onDisconnect, onSwitchChain }: {
   onBack: () => void
   address?: string
   isConnected: boolean
+  wrongChain: boolean
+  switching: boolean
   onConnect: () => void
   onDisconnect: () => void
+  onSwitchChain: () => void
 }) {
   const [copied, setCopied] = useState(false)
   const copy = () => {
@@ -112,9 +116,7 @@ function AppHeader({ onBack, address, isConnected, onConnect, onDisconnect }: {
           background: 'linear-gradient(135deg,#00E5B0,#00C2FF)',
           WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
         }}>VIXA</span>
-        <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '1.5px', color: C.muted, textTransform: 'uppercase' }}>
-          Terminal
-        </span>
+       
       </div>
 
       <div style={{ flex: 1 }} />
@@ -133,13 +135,36 @@ function AppHeader({ onBack, address, isConnected, onConnect, onDisconnect }: {
 
       {isConnected && address ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {/* Wrong-network badge + switch button */}
+          {wrongChain && (
+            <button
+              onClick={onSwitchChain}
+              disabled={switching}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '5px 12px', borderRadius: 8,
+                background: 'rgba(245,158,11,0.12)',
+                border: '1px solid rgba(245,158,11,0.35)',
+                color: C.warn, fontSize: 12, fontWeight: 700,
+                cursor: switching ? 'not-allowed' : 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => { if (!switching) e.currentTarget.style.background = 'rgba(245,158,11,0.2)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,158,11,0.12)' }}
+            >
+              {switching
+                ? <><Loader2 size={12} style={{ animation: 'spin-slow 1s linear infinite' }} /> Switching...</>
+                : <>⚠ Switch to Unichain Sepolia</>
+              }
+            </button>
+          )}
           <div style={{
             padding: '5px 12px', borderRadius: 8,
             background: 'rgba(255,255,255,0.04)',
             border: `1px solid ${C.border}`,
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
-            <div style={{ width: 6, height: 6, borderRadius: '50%', background: C.cyan }} />
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: wrongChain ? C.warn : C.cyan }} />
             <span style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>{fmtAddr(address)}</span>
             <button onClick={copy} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: copied ? C.cyan : C.dim, display: 'flex' }}>
               {copied ? <CheckCircle2 size={12} color={C.cyan} /> : <Copy size={12} />}
@@ -166,55 +191,6 @@ function AppHeader({ onBack, address, isConnected, onConnect, onDisconnect }: {
   )
 }
 
-// ─── Disconnected banner ──────────────────────────────────────────────────────
-function DisconnectedBanner({ onConnect }: { onConnect: () => void }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-      style={{
-        maxWidth: 600, margin: '2rem auto',
-        background: 'rgba(0,229,176,0.04)',
-        border: '1px solid rgba(0,229,176,0.18)',
-        borderRadius: 20, padding: '2.5rem',
-        textAlign: 'center', position: 'relative', overflow: 'hidden',
-      }}
-    >
-      <div style={{
-        position: 'absolute', top: -40, left: '50%', transform: 'translateX(-50%)',
-        width: 300, height: 200,
-        background: 'radial-gradient(circle, rgba(0,229,176,0.07) 0%, transparent 70%)',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        width: 56, height: 56, borderRadius: 16, margin: '0 auto 1.5rem',
-        background: 'rgba(0,229,176,0.1)', border: '1px solid rgba(0,229,176,0.25)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <Wallet size={24} color={C.cyan} />
-      </div>
-      <h3 style={{ fontSize: 22, fontWeight: 800, color: C.text, marginBottom: '0.75rem', letterSpacing: '-0.5px' }}>
-        Connect Wallet to Begin
-      </h3>
-      <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.7, maxWidth: 400, margin: '0 auto 2rem' }}>
-        Connect your wallet to receive test assets, configure your position,
-        and deploy liquidity into the Vixa protocol.
-      </p>
-      <motion.button
-        whileHover={{ scale: 1.02, boxShadow: '0 12px 40px rgba(0,229,176,0.3)' }}
-        whileTap={{ scale: 0.98 }}
-        onClick={onConnect}
-        style={{
-          background: 'linear-gradient(135deg,#00E5B0,#00C2FF)',
-          border: 'none', borderRadius: 12,
-          padding: '14px 36px', color: '#030712',
-          fontSize: 15, fontWeight: 800, cursor: 'pointer', letterSpacing: '-0.3px',
-        }}
-      >
-        Connect Wallet
-      </motion.button>
-    </motion.div>
-  )
-}
 
 // ─── Step indicator ───────────────────────────────────────────────────────────
 function StepIndicator({ current, completed }: { current: WorkflowStep; completed: Set<number> }) {
@@ -1165,6 +1141,17 @@ export default function AppScreen({ onBack }: { onBack: () => void }) {
   const { address, isConnected } = useAccount()
   const { connect } = useConnect()
   const { disconnect } = useDisconnect()
+  const chainId = useChainId()
+  const { switchChain, isPending: switching } = useSwitchChain()
+
+  const wrongChain = isConnected && chainId !== unichainSepolia.id
+
+  // Auto-switch to Unichain Sepolia on connect
+  useEffect(() => {
+    if (isConnected && chainId !== unichainSepolia.id) {
+      switchChain({ chainId: unichainSepolia.id })
+    }
+  }, [isConnected, chainId, switchChain])
 
   const [step, setStep] = useState<WorkflowStep>(1)
   const [completed, setCompleted] = useState<Set<number>>(new Set())
@@ -1309,7 +1296,7 @@ export default function AppScreen({ onBack }: { onBack: () => void }) {
     }, 1000)
   }, [price, pushEvent])
 
-  const locked = !isConnected
+  const locked = !isConnected || wrongChain
 
   return (
     <div style={{ background: C.bg, minHeight: '100vh', fontFamily: 'Inter, system-ui, sans-serif', color: C.text }}>
@@ -1325,8 +1312,11 @@ export default function AppScreen({ onBack }: { onBack: () => void }) {
       <AppHeader
         onBack={onBack} address={address}
         isConnected={isConnected}
+        wrongChain={wrongChain}
+        switching={switching}
         onConnect={handleConnect}
         onDisconnect={() => disconnect()}
+        onSwitchChain={() => switchChain({ chainId: unichainSepolia.id })}
       />
 
       <div style={{ maxWidth: 1440, margin: '0 auto', padding: '2rem', position: 'relative', zIndex: 1 }}>
