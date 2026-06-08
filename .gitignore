@@ -1,5 +1,7 @@
 # Foundry build artifacts
 contracts/out/
+contracts/cache 
+contracts/broadcast
 
 # Any forge-installed libs that are not registered submodules
 contracts/lib/
