@@ -14,7 +14,7 @@ import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {DeltaHook} from "../src/DriftGuard.sol";
+import {DeltaHook} from "../src/Vixa.sol";
 import {DeltaDepositor} from "../src/DeltaDepositor.sol";
 
 contract Simulate is Script {

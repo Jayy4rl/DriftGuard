@@ -11,7 +11,7 @@ import {TransientStateLibrary} from "@uniswap/v4-core/src/libraries/TransientSta
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {DeltaHook} from "./DriftGuard.sol";
+import {DeltaHook} from "./Vixa.sol";
 
 // Minimal single-user LP depositor for the DeltaHook MVP.
 

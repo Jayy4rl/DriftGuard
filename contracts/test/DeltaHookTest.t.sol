@@ -18,7 +18,7 @@ import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {HookMiner} from "v4-hooks-public/test/utils/HookMiner.sol";
 import {MockERC20} from "solmate/src/test/utils/mocks/MockERC20.sol";
-import {DeltaHook} from "../src/DriftGuard.sol";
+import {DeltaHook} from "../src/Vixa.sol";
 import {DeltaDepositor} from "../src/DeltaDepositor.sol";
 
 contract DeltaHookTest is Test {

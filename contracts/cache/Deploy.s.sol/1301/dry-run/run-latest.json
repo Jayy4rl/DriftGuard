@@ -1,0 +1,31 @@
+{
+  "transactions": [
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    },
+    {
+      "rpc": "https://unichain-sepolia-rpc.publicnode.com"
+    }
+  ]
+}
