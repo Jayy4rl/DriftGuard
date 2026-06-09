@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import Ribbon3D from './Ribbon3D'
 
-export default function Hero({ onLaunchApp }: { onLaunchApp?: () => void }) {
+export default function Hero({ onLaunchApp, onViewDemo }: { onLaunchApp?: () => void; onViewDemo?: () => void }) {
   return (
     <section
       id="home"
@@ -135,6 +135,7 @@ export default function Hero({ onLaunchApp }: { onLaunchApp?: () => void }) {
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(0,229,176,0.4)'; e.currentTarget.style.color = '#00E5B0' }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.15)'; e.currentTarget.style.color = '#F8FAFC' }}
+              onClick={onViewDemo}
             >
               View Demo
             </button>

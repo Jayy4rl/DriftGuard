@@ -8,3 +8,4 @@ contracts/lib/
 
 # Environment — contains private keys and RPC URLs
 contracts/.env
+frontend/.env

@@ -23,7 +23,7 @@ export default function App() {
   return (
     <div style={{ background: '#030712', minHeight: '100vh' }}>
       <Navbar onLaunchApp={() => setPage('app')} />
-      <Hero onLaunchApp={() => setPage('app')} />
+      <Hero onLaunchApp={() => setPage('app')} onViewDemo={() => setPage('app')} />
       <MetricsBar />
       <ProblemSection />
       <HowItWorks />
