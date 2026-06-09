@@ -52,17 +52,17 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 
 | Contract | Address | Explorer |
 |---|---|---|
-| PoolManager | `<UNICHAIN_POOL_MANAGER>` | [View](https://sepolia.uniscan.xyz/address/<UNICHAIN_POOL_MANAGER>) |
-| DeltaHook | `<DELTA_HOOK_ADDRESS>` | [View](https://sepolia.uniscan.xyz/address/<DELTA_HOOK_ADDRESS>) |
-| DeltaDepositor | `<DELTA_DEPOSITOR_ADDRESS>` | [View](https://sepolia.uniscan.xyz/address/<DELTA_DEPOSITOR_ADDRESS>) |
-| Mock WETH | `<TOKEN0_ADDRESS>` | [View](https://sepolia.uniscan.xyz/address/<TOKEN0_ADDRESS>) |
-| Mock USDC | `<TOKEN1_ADDRESS>` | [View](https://sepolia.uniscan.xyz/address/<TOKEN1_ADDRESS>) |
+| PoolManager | `0x00b036b58a818b1bc34d502d3fe730db729e62ac` | [View](https://sepolia.uniscan.xyz/address/0x00b036b58a818b1bc34d502d3fe730db729e62ac) |
+| DeltaHook | `0xC8874581894D8C7EBd3b9FfFAbdDC96238b88dc0` | [View](https://sepolia.uniscan.xyz/address/0xC8874581894D8C7EBd3b9FfFAbdDC96238b88dc0) |
+| DeltaDepositor | `0x4384bcb8B523687f3618D13FE77677B6E158112f` | [View](https://sepolia.uniscan.xyz/address/0x4384bcb8B523687f3618D13FE77677B6E158112f) |
+| Mock WETH | `0xae3E277b72400Aa5197f0044FD4B131d9458a9DC` | [View](https://sepolia.uniscan.xyz/address/0xae3E277b72400Aa5197f0044FD4B131d9458a9DC) |
+| Mock USDC | `0xB0E97552e6b63F52943Ba92189E902d118488fC0` | [View](https://sepolia.uniscan.xyz/address/0xB0E97552e6b63F52943Ba92189E902d118488fC0) |
 
-### Reactive Network Kopli (Chain ID: 5318008)
+### Reactive Network Lasna (Chain ID: 5318007)
 
 | Contract | Address | Explorer |
 |---|---|---|
-| DeltaHookRSC | `<RSC_ADDRESS>` | [View](https://kopli.reactscan.net/address/<RSC_ADDRESS>) |
+| DeltaHookRSC | `0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4` | [View](https://lasna.reactscan.net/address/0x9299472A6399Fd1027ebF067571Eb3e3D7837FC4) |
 
 ---
 
@@ -76,7 +76,7 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 | `contracts/src/DeltaDepositor.sol` | Implements `IUnlockCallback`. Calls `poolManager.unlock()`, `modifyLiquidity()`, `currencyDelta()`, `settle()`, `take()` for all position operations. |
 | `contracts/script/Deploy.s.sol` | Uses `HookMiner` from v4-hooks-public to mine correct permission address. Calls `poolManager.initialize()` for pool creation. |
 
-**Verify:** Run `forge test --match-contract DeltaHookForkTest -vvv` with `UNICHAIN_RPC_URL` and `UNICHAIN_POOL_MANAGER` set — tests execute against the live Unichain Sepolia PoolManager.
+**Verify:** Run `forge test --match-contract DeltaHookForkTest -vvv` with `UNICHAIN_RPC_URL` and `UNICHAIN_POOL_MANAGER` set. Tests execute against the live Unichain Sepolia PoolManager.
 
 ---
 
@@ -85,7 +85,7 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 | File | Integration |
 |---|---|
 | `contracts/src/DeltaHookRSC.sol` | Inherits `AbstractPausableReactive`. Calls `service.subscribe()` for 3 event topics on Unichain. Emits `Callback` to deliver `triggerRebalance()` to DeltaDepositor. Implements `getPausableSubscriptions()` for pause/resume. |
-| `contracts/script/DeployRSC.s.sol` | Deploys RSC to Reactive Network Kopli. Passes hook address, depositor address, chain ID 1301. |
+| `contracts/script/DeployRSC.s.sol` | Deploys RSC to Reactive Network Lasna. Passes hook address, depositor address, chain ID 1301. |
 | `contracts/src/DriftGuard.sol` | Stores `rscRelay` (Callback Proxy). Events `RebalanceNeeded`, `PositionOutOfRange`, `PositionClosed` are RSC subscription targets. `triggerRebalance` authorized for position owner OR `rscRelay`. |
 
 **Subscriptions:**
@@ -109,7 +109,7 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 | `contracts/test/DeltaHookForkTest.t.sol` | Forks Unichain Sepolia. All fork tests run against live PoolManager. |
 | `frontend/src/simulation/runSimulation.ts` | Sends simulation transactions to Unichain Sepolia. WebSocket subscription for live event streaming. |
 
-**Verify:** Deployed contracts visible at `https://sepolia.uniscan.xyz`. Chain ID 1301 confirmed in deploy summary output.
+**Verify:** Deployed contracts visible at `https://sepolia.uniscan.xyz`.
 
 ---
 
@@ -119,7 +119,7 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 |---|---|
 | Hook | Uniswap v4 (`beforeAddLiquidity`, `afterAddLiquidity`, `beforeSwap`, `afterSwap`, `afterRemoveLiquidity`) |
 | Chain | Unichain Sepolia (chain ID 1301) |
-| Automation | Reactive Network RSC (Kopli testnet) |
+| Automation | Reactive Network RSC (Lasna testnet) |
 | Contracts | Solidity 0.8.26 · Foundry |
 | Frontend | React 18 · TypeScript · Vite |
 | Web3 | ethers.js v6 · wagmi |
@@ -131,14 +131,13 @@ LP → DeltaDepositor → PoolManager (long-vol leg + short-vol leg)
 **Prerequisites:** Foundry · Node.js 20+
 
 ```bash
-git clone <repo-url>
-cd vixa
+git clone https://github.com/Jayy4rl/Vixa.git
 
 # Contracts
 cd contracts && forge install && forge build && forge test
 
 # Frontend
-cd ../frontend && npm install && npm run dev
+cd frontend && npm install && npm run dev
 # Open http://localhost:5173
 ```
 
@@ -155,34 +154,6 @@ forge test --match-contract DeltaHookRSCTest -vvv
 source .env && forge test --match-contract DeltaHookForkTest -vvv
 ```
 
-Fork tests skip silently when `UNICHAIN_RPC_URL` is unset — CI passes without credentials.
-
-### Environment Variables
-
-```bash
-# contracts/.env
-PRIVATE_KEY=
-UNICHAIN_POOL_MANAGER=
-UNICHAIN_RPC_URL=https://sepolia.unichain.org
-CURRENCY0=
-CURRENCY1=
-INITIAL_TICK=0
-RN_CALLBACK_PROXY=
-DELTA_HOOK=
-DELTA_DEPOSITOR=
-
-# frontend/.env
-VITE_DELTA_HOOK_ADDRESS=
-VITE_DELTA_DEPOSITOR_ADDRESS=
-VITE_TOKEN0_ADDRESS=
-VITE_TOKEN1_ADDRESS=
-VITE_POOL_SWAP_TEST_ADDRESS=
-VITE_POOL_MANAGER_ADDRESS=
-VITE_UNICHAIN_RPC_URL=https://sepolia.unichain.org
-VITE_UNICHAIN_WS_URL=wss://sepolia.unichain.org
-VITE_DEMO_PRIVATE_KEY=
-```
-
 ---
 
 ## Project Structure
@@ -191,10 +162,9 @@ VITE_DEMO_PRIVATE_KEY=
 vixa/
 ├── contracts/
 │   ├── src/
-│   │   ├── DriftGuard.sol        DeltaHook — v4 hook, delta monitoring, event emission
+│   │   ├── Vixa.sol         DeltaHook — v4 hook, delta monitoring, event emission
 │   │   ├── DeltaDepositor.sol    LP entry point — deposit, withdraw, rebalance
-│   │   ├── DeltaHookRSC.sol      Reactive Smart Contract — autonomous recovery
-│   │   └── Vixa.sol              Additional protocol contract
+│   │   └── DeltaHookRSC.sol      Reactive Smart Contract — autonomous recovery
 │   ├── script/
 │   │   ├── Deploy.s.sol          Deploy hook, depositor, tokens, initialize pool
 │   │   ├── DeployRSC.s.sol       Deploy RSC to Reactive Network Kopli
@@ -207,11 +177,7 @@ vixa/
 │
 └── frontend/
     └── src/
-        ├── components/           Landing, dashboard, simulation, deposit UI
-        ├── hooks/
-        │   └── useSimulation.ts  React hook managing simulation state
-        ├── simulation/
-        │   └── runSimulation.ts  ethers.js transaction sequence
+        ├── components/           Landing, dashboard, deposit UI
         └── wagmi.config.ts       Wallet connection config
 ```
 
@@ -242,25 +208,6 @@ vixa/
 4. Click **"Run Simulation"** — 14-step sequence executes against real Unichain Sepolia
 5. Click any transaction hash in the step timeline — opens real transaction on Uniscan
 6. Note `RebalanceExecuted` step — sender on Uniscan is the Reactive Network Callback Proxy, not the demo wallet
-
-### 5-Minute Demo (With Wallet)
-
-1. Connect MetaMask — switch to Unichain Sepolia (chain ID 1301)
-2. Click **"Get Tokens"** — mints test WETH and USDC (verify on Uniscan)
-3. Approve both tokens → enter liquidity amount and delta threshold → **Deposit**
-4. Position dashboard appears with live tick ranges and net delta
-5. Click **"Move Price"** 4–5 times — watch delta drift in event feed
-6. Wait 10–30 seconds — `RebalanceExecuted` fires from Callback Proxy (not your wallet)
-7. Verify on Uniscan: `from` address is Reactive Network Callback Proxy
-8. Click **Withdraw** — tokens returned, position cleaned up
-
----
-
-## Honest Limitations
-
-- **IL is reduced, not eliminated.** The dual-leg offset is approximate and degrades between rebalance events.
-- **Rebalancing is not atomic.** The depositor owns PoolManager positions, not the hook. `afterSwap` signals but cannot rebalance inline. The RSC delivers the rebalance in a separate transaction — there is a latency window of seconds to minutes.
-- **Single-user depositor in MVP.** Multi-LP is supported via per-position ownership tracking but not via a shared ERC-4626 vault.
 
 ---
 
