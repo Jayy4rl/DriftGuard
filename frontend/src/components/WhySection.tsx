@@ -140,45 +140,6 @@ export default function WhySection() {
             overflow: 'hidden',
           }}
         >
-          <div style={{ padding: '1.5rem 2rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-            <span style={{ fontWeight: 700, color: '#94A3B8', fontSize: 14 }}>Comparison with Existing IL Solutions</span>
-          </div>
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                  {['Solution', 'Mechanism', 'External Deps', 'Idle Capital', 'Atomic'].map(h => (
-                    <th key={h} style={{ padding: '1rem 1.5rem', textAlign: 'left', color: '#475569', fontWeight: 600, whiteSpace: 'nowrap' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ['Gamma / Arrakis', 'Range rebalancing', 'None', 'No', '✗'],
-                  ['Umami / Neutra', 'External perp hedge', 'GMX / Perps', 'Yes (margin)', '✗'],
-                  ['EulerSwap', 'Borrow-based hedge', 'Euler', 'Yes (borrow cost)', '✗'],
-                  ['Bancor v2.1', 'IL insurance', 'Protocol', 'Protocol reserves', '✗'],
-                  ['Vixa ✦', 'Position splitting + RSC-triggered rebalance', 'None', 'No', '–'],
-                ].map((row, i) => (
-                  <tr key={i} style={{
-                    borderBottom: '1px solid rgba(255,255,255,0.03)',
-                    background: row[0].includes('Vixa') ? 'rgba(0,229,176,0.04)' : 'transparent',
-                  }}>
-                    {row.map((cell, j) => (
-                      <td key={j} style={{
-                        padding: '1rem 1.5rem',
-                        color: row[0].includes('Vixa')
-                          ? (j === 0 ? '#00E5B0' : '#94A3B8')
-                          : (j === 4 ? '#EF4444' : '#64748B'),
-                        fontWeight: row[0].includes('Vixa') ? 600 : 400,
-                        whiteSpace: 'nowrap',
-                      }}>{cell}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </motion.div>
       </div>
     </section>
