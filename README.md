@@ -9,11 +9,11 @@
 
 ## What is Vixa?
 
-Vixa is a Uniswap v4 Hook that splits LP deposits into two internally offsetting sub-positions within the same pool — a long-vol leg below the current price and a short-vol leg above it. Both legs earn swap fees continuously. Their delta exposures partially cancel each other, structurally reducing impermanent loss without external protocols, idle collateral, or keeper infrastructure.
+Vixa is a Uniswap v4 hook that structurally reduces impermanent loss by splitting LP deposits into two internally offsetting sub-positions; a long-vol leg below the current price and a short-vol leg above it, within a single pool.
 
-Every AMM LP position is mathematically equivalent to selling a straddle — the LP is structurally short volatility. Vixa changes the payoff structure of the position itself rather than compensating for IL after the fact.
+Both legs earn swap fees continuously while their delta exposures partially cancel each other, changing the payoff structure of the position itself rather than compensating for impermanent loss after the fact. No external protocols, no idle collateral, no keeper infrastructure. 
 
-A Reactive Smart Contract on Reactive Network subscribes to hook events on Unichain. When net delta exceeds the configured threshold, the RSC delivers a `triggerRebalance()` callback autonomously — repositioning both legs around the new price with no bot, no server, and no cron job.
+A Reactive Smart Contract on Reactive Network subscribes to hook events on Unichain. When net delta exceeds the configured threshold, the RSC delivers a `triggerRebalance()` callback autonomously, repositioning both legs around the new price with no server, and no human intervention required.
 
 **Built for:** Uniswap Hook Incubator Cohort 9 — Impermanent Loss & Yield Systems Track  
 **Sponsor Integrations:** Uniswap v4 · Reactive Network · Unichain
@@ -222,6 +222,6 @@ vixa/
 
 ## License
 
-MIT
+[MIT](https://mit-license.org/2016)
 
 Built for the Uniswap Hook Incubator Cohort 9 — Impermanent Loss & Yield Systems
